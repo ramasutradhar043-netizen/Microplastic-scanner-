@@ -33,27 +33,31 @@ if uploaded_file is not None:
         image = Image.open(io.BytesIO(file_bytes))
         img_np = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
-        # FIXED: use_container_width instead of use_column_width
         st.image(image, caption="Uploaded Filter Sample", use_container_width=True)
 
         if st.button("Run Microplastic Analysis"):
             with st.spinner("Processing image and filtering background noise..."):
                 gray = cv2.cvtColor(img_np, cv2.COLOR_BGR2GRAY)
-                blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-                thresh = cv2.adaptiveThreshold(
-                    blurred,
-                    255,
-                    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                    cv2.THRESH_BINARY_INV,
-                    11,
-                    2,
-                )
+                
+                # Resize image internally for faster and cleaner processing if too large
+                height, width = gray.shape
+                if width > 1000:
+                    scale = 1000 / width
+                    gray = cv2.resize(gray, (1000, int(height * scale)))
 
+                # Strong blur to eliminate paper texture and shadows
+                blurred = cv2.GaussianBlur(gray, (11, 11), 0)
+
+                # Otsu's thresholding for automatic background separation
+                _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+                # Find contours
                 contours, _ = cv2.findContours(
                     thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
                 )
 
-                min_particle_area = 30
+                # Much higher area filter so only real plastic pieces count (adjust as needed)
+                min_particle_area = 150  
                 valid_particles = 0
                 total_particle_pixels = 0
 
@@ -68,13 +72,13 @@ if uploaded_file is not None:
                      coverage_percentage = 0.0
                 else:
                      coverage_percentage = min(
-                        100.0, (total_particle_pixels / total_image_pixels) * 100 * 3.5
+                        100.0, (total_particle_pixels / total_image_pixels) * 100 * 5.0
                     )
 
-                if coverage_percentage < 5:
+                if coverage_percentage < 2:
                     risk_level = "Low Risk"
                     color = "green"
-                elif coverage_percentage < 20:
+                elif coverage_percentage < 10:
                     risk_level = "Moderate Risk"
                     color = "orange"
                 else:
