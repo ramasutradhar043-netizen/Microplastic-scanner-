@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import streamlit as st
 from PIL import Image
+import io
 
 st.set_page_config(
     page_title="SMART GREEN-SHIELD - Microplastic Scanner", page_icon="🌱"
@@ -28,91 +29,102 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
-  # Load image
-  image = Image.open(uploaded_file)
-  img_np = np.array(image)
+    try:
+        # --- FIX: Robust Image Loading ---
+        # Read file bytes directly to handle potential corruption or format issues
+        file_bytes = uploaded_file.read()
+        image = Image.open(io.BytesIO(file_bytes))
 
-  st.image(image, caption="Uploaded Filter Sample", use_column_width=True)
+        # Convert PIL Image to OpenCV format (RGB)
+        img_np = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
-  if st.button("Run Microplastic Analysis"):
-    with st.spinner("Processing image and filtering background noise..."):
-      # Convert to grayscale
-      if len(img_np.shape) == 3:
-        gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-      else:
-        gray = img_np
+        # Display the image in the app
+        st.image(image, caption="Uploaded Filter Sample", use_column_width=True)
 
-      # Apply Gaussian Blur to remove high-frequency noise and minor glare
-      blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        if st.button("Run Microplastic Analysis"):
+            with st.spinner("Processing image and filtering background noise..."):
+                # Convert to grayscale for OpenCV processing
+                gray = cv2.cvtColor(img_np, cv2.COLOR_BGR2GRAY)
 
-      # Adaptive thresholding to handle lighting variations
-      thresh = cv2.adaptiveThreshold(
-          blurred,
-          255,
-          cv2.adaptiveThresholdMethod.GAUSSIAN_C,
-          cv2.THRESH_BINARY_INV,
-          11,
-          2,
-      )
+                # Apply Gaussian Blur to remove high-frequency noise and minor glare
+                blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-      # Find contours of particles
-      contours, _ = cv2.findContours(
-          thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-      )
+                # Adaptive thresholding to handle lighting variations
+                thresh = cv2.adaptiveThreshold(
+                    blurred,
+                    255,
+                    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                    cv2.THRESH_BINARY_INV,
+                    11,
+                    2,
+                )
 
-      # Filter contours by minimum area to ignore tiny dots, paper pores, and minor shadows
-      min_particle_area = 30  # Adjust this value if needed
-      valid_particles = 0
-      total_particle_pixels = 0
+                # Find contours of particles
+                contours, _ = cv2.findContours(
+                    thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                )
 
-      for cnt in contours:
-        area = cv2.contourArea(cnt)
-        if area > min_particle_area:
-          valid_particles += 1
-          total_particle_pixels += area
+                # Filter contours by minimum area
+                min_particle_area = 30
+                valid_particles = 0
+                total_particle_pixels = 0
 
-      total_image_pixels = gray.shape[0] * gray.shape[1]
-      # Calculate realistic coverage percentage based on valid filtered particles
-      coverage_percentage = min(
-          100.0, (total_particle_pixels / total_image_pixels) * 100 * 3.5
-      )
+                for cnt in contours:
+                    area = cv2.contourArea(cnt)
+                    if area > min_particle_area:
+                        valid_particles += 1
+                        total_particle_pixels += area
 
-      # Determine Risk Level based on filtered coverage
-      if coverage_percentage < 5:
-        risk_level = "Low Risk"
-        color = "green"
-      elif coverage_percentage < 20:
-        risk_level = "Moderate Risk"
-        color = "orange"
-      else:
-        risk_level = "High Risk"
-        color = "red"
+                total_image_pixels = gray.shape[0] * gray.shape[1]
+                
+                # Safely handle division by zero if image is somehow empty
+                if total_image_pixels == 0:
+                     coverage_percentage = 0.0
+                else:
+                     coverage_percentage = min(
+                        100.0, (total_particle_pixels / total_image_pixels) * 100 * 3.5
+                    )
 
-      st.markdown("---")
-      st.subheader("📊 Analysis Results")
-      col1, col2 = st.columns(2)
+                # Determine Risk Level based on filtered coverage
+                if coverage_percentage < 5:
+                    risk_level = "Low Risk"
+                    color = "green"
+                elif coverage_percentage < 20:
+                    risk_level = "Moderate Risk"
+                    color = "orange"
+                else:
+                    risk_level = "High Risk"
+                    color = "red"
 
-      with col1:
-        st.metric(
-            label="Estimated Coverage", value=f"{coverage_percentage:.2f}%"
-        )
-        st.metric(label="Detected Particles", value=str(valid_particles))
+                st.markdown("---")
+                st.subheader("📊 Analysis Results")
+                col1, col2 = st.columns(2)
 
-      with col2:
-        st.markdown(f"### Risk Level: :{color}[{risk_level}]")
+                with col1:
+                    st.metric(
+                        label="Estimated Coverage", value=f"{coverage_percentage:.2f}%"
+                    )
+                    st.metric(label="Detected Particles", value=str(valid_particles))
 
-      if risk_level == "High Risk":
-        st.error(
-            "High microplastic contamination detected! Consider implementing"
-            " bio-mulch sheets and remediation steps."
-        )
-      elif risk_level == "Moderate Risk":
-        st.warning(
-            "Moderate contamination observed. Monitor soil health regularly."
-        )
-      else:
-        st.success(
-            "Low contamination levels observed. Soil sample is relatively"
-            " clean."
-        )
-          
+                with col2:
+                    st.markdown(f"### Risk Level: :{color}[{risk_level}]")
+
+                if risk_level == "High Risk":
+                    st.error(
+                        "High microplastic contamination detected! Consider implementing"
+                        " bio-mulch sheets and remediation steps."
+                    )
+                elif risk_level == "Moderate Risk":
+                    st.warning(
+                        "Moderate contamination observed. Monitor soil health regularly."
+                    )
+                else:
+                    st.success(
+                        "Low contamination levels observed. Soil sample is relatively"
+                        " clean."
+                    )
+
+    except Exception as e:
+        st.error(f"An error occurred while loading the image: {e}")
+        st.info("Please ensure you are uploading a valid JPG or PNG image file.")
+
