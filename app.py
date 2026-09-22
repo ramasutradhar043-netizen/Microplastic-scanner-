@@ -20,8 +20,7 @@ st.markdown(
 
 st.write("")
 st.markdown(
-    "Upload a clear photo of your dried filter paper/cloth against a plain white"
-    " background to estimate soil microplastic contamination."
+    "Upload a clear photo of your dried filter paper/cloth against a plain white background to estimate soil microplastic contamination."
 )
 
 uploaded_file = st.file_uploader(
@@ -30,26 +29,17 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
     try:
-        # --- FIX: Robust Image Loading ---
-        # Read file bytes directly to handle potential corruption or format issues
         file_bytes = uploaded_file.read()
         image = Image.open(io.BytesIO(file_bytes))
-
-        # Convert PIL Image to OpenCV format (RGB)
         img_np = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
-        # Display the image in the app
-        st.image(image, caption="Uploaded Filter Sample", use_column_width=True)
+        # FIXED: use_container_width instead of use_column_width
+        st.image(image, caption="Uploaded Filter Sample", use_container_width=True)
 
         if st.button("Run Microplastic Analysis"):
             with st.spinner("Processing image and filtering background noise..."):
-                # Convert to grayscale for OpenCV processing
                 gray = cv2.cvtColor(img_np, cv2.COLOR_BGR2GRAY)
-
-                # Apply Gaussian Blur to remove high-frequency noise and minor glare
                 blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-
-                # Adaptive thresholding to handle lighting variations
                 thresh = cv2.adaptiveThreshold(
                     blurred,
                     255,
@@ -59,12 +49,10 @@ if uploaded_file is not None:
                     2,
                 )
 
-                # Find contours of particles
                 contours, _ = cv2.findContours(
                     thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
                 )
 
-                # Filter contours by minimum area
                 min_particle_area = 30
                 valid_particles = 0
                 total_particle_pixels = 0
@@ -76,8 +64,6 @@ if uploaded_file is not None:
                         total_particle_pixels += area
 
                 total_image_pixels = gray.shape[0] * gray.shape[1]
-                
-                # Safely handle division by zero if image is somehow empty
                 if total_image_pixels == 0:
                      coverage_percentage = 0.0
                 else:
@@ -85,7 +71,6 @@ if uploaded_file is not None:
                         100.0, (total_particle_pixels / total_image_pixels) * 100 * 3.5
                     )
 
-                # Determine Risk Level based on filtered coverage
                 if coverage_percentage < 5:
                     risk_level = "Low Risk"
                     color = "green"
@@ -111,8 +96,7 @@ if uploaded_file is not None:
 
                 if risk_level == "High Risk":
                     st.error(
-                        "High microplastic contamination detected! Consider implementing"
-                        " bio-mulch sheets and remediation steps."
+                        "High microplastic contamination detected! Consider implementing bio-mulch sheets and remediation steps."
                     )
                 elif risk_level == "Moderate Risk":
                     st.warning(
@@ -120,11 +104,9 @@ if uploaded_file is not None:
                     )
                 else:
                     st.success(
-                        "Low contamination levels observed. Soil sample is relatively"
-                        " clean."
+                        "Low contamination levels observed. Soil sample is relatively clean."
                     )
 
     except Exception as e:
         st.error(f"An error occurred while loading the image: {e}")
         st.info("Please ensure you are uploading a valid JPG or PNG image file.")
-
